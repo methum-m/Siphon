@@ -19,7 +19,7 @@ jobs:
           key: ${{ secrets.DROPLET_SSH_KEY }}
           port: 2007
           script: |
-            cd /home/methum/logstream
+            cd /home/methum/jlog-ingestion
             git pull origin main
             docker build -t logstream .
             docker stop logstream || true
