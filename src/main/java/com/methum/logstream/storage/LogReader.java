@@ -1,5 +1,6 @@
 package com.methum.logstream.storage;
 
+import com.methum.logstream.config.ReadAndWriteConfig;
 import com.methum.logstream.ingestion.LogEntry;
 import com.methum.logstream.ingestion.LogLevel;
 import org.apache.juli.logging.Log;
@@ -21,57 +22,73 @@ public class LogReader {
 
     private final Path filePath;
 
-    public LogReader(@Value("${logstream.storage.path}") String filePath) {
+    private final ReadAndWriteConfig readAndWriteConfig;
+
+    public LogReader(@Value("${logstream.storage.path}") String filePath, ReadAndWriteConfig readAndWriteConfig) {
         this.filePath = Path.of(filePath);
+        this.readAndWriteConfig = readAndWriteConfig;
     }
 
 
     public List<LogEntry> read(){
 
-        if (!Files.exists(filePath)){
-            return new ArrayList<>();
-        }
+        readAndWriteConfig.readWriteLock().readLock().lock();
+
         List<LogEntry> logEntries = new ArrayList<LogEntry>();
 
-        try(
-                DataInputStream dis = new DataInputStream(new BufferedInputStream(Files.newInputStream(filePath)))
+        try{
 
-        ){
-            while (true){
-
-                long timestamp;
-                try{
-                    timestamp = dis.readLong();
-                }catch (EOFException e){
-                    break;
-                }
-
-                byte level =   dis.readByte();
-
-                int serviceLength = dis.readInt();
-
-                byte [] serviceArr = new byte[serviceLength];
-
-                dis.readFully(serviceArr);
-
-                int messageLength = dis.readInt();
-
-                byte [] messageArr = new byte[messageLength];
-
-                dis.readFully(messageArr);
-
-                logEntries.add(new LogEntry
-                        (Instant.ofEpochMilli(timestamp),
-                                LogLevel.fromNumber(level),
-                                new String(serviceArr,StandardCharsets.UTF_8),
-                                new String(messageArr,StandardCharsets.UTF_8)));
-
-
+            if (!Files.exists(filePath)){
+                return new ArrayList<>();
             }
-        }
 
-        catch (Exception e) {
-            throw new RuntimeException(e);
+
+            try(
+                    DataInputStream dis = new DataInputStream(new BufferedInputStream(Files.newInputStream(filePath)))
+
+            ){
+
+                while (true){
+
+                    long timestamp;
+                    try{
+                        timestamp = dis.readLong();
+                    }catch (EOFException e){
+                        break;
+                    }
+
+                    byte level =   dis.readByte();
+
+                    int serviceLength = dis.readInt();
+
+                    byte [] serviceArr = new byte[serviceLength];
+
+                    dis.readFully(serviceArr);
+
+                    int messageLength = dis.readInt();
+
+                    byte [] messageArr = new byte[messageLength];
+
+                    dis.readFully(messageArr);
+
+                    logEntries.add(new LogEntry
+                            (Instant.ofEpochMilli(timestamp),
+                                    LogLevel.fromNumber(level),
+                                    new String(serviceArr,StandardCharsets.UTF_8),
+                                    new String(messageArr,StandardCharsets.UTF_8)));
+
+
+                }
+            }
+
+            catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+
+        } finally {
+
+            readAndWriteConfig.readWriteLock().readLock().unlock();
+
         }
 
         return logEntries;
@@ -80,6 +97,8 @@ public class LogReader {
 
 
     public LogEntry readAt(long offset) throws IOException {
+
+        readAndWriteConfig.readWriteLock().readLock().lock();
 
         try(RandomAccessFile randomAccessFile = new RandomAccessFile(filePath.toFile(),"r")){
 
@@ -117,6 +136,8 @@ public class LogReader {
 
         }catch(IOException e){
             throw new RuntimeException(e);
+        }finally {
+            readAndWriteConfig.readWriteLock().readLock().unlock();
         }
 
 
@@ -126,52 +147,64 @@ public class LogReader {
 
     public Map<Long,LogEntry>  readWithOffsets(){
 
-        if (!Files.exists(filePath)){
-            return new HashMap<>();
-        }
+        readAndWriteConfig.readWriteLock().readLock().lock();
 
+        try {
 
-        Map<Long,LogEntry> longLogEntryMap = new HashMap<>();
-
-        try(DataInputStream dis = new DataInputStream(new BufferedInputStream(Files.newInputStream(filePath)))) {
-
-            long counter = 0;
-
-            while (true){
-
-                long timestamp;
-
-                try{
-                    timestamp = dis.readLong();
-                }catch (EOFException e){
-                    break;
-                }
-                byte level = dis.readByte();
-
-                int serviceLength = dis.readInt();
-
-                byte[] serviceArr = new byte[serviceLength];
-
-                dis.readFully(serviceArr);
-
-                int messageLength = dis.readInt();
-
-                byte [] messageArr = new byte[messageLength];
-                dis.readFully(messageArr);
-
-                longLogEntryMap.put(counter,new LogEntry(Instant.ofEpochMilli(timestamp),LogLevel.fromNumber(level),new String(serviceArr,StandardCharsets.UTF_8),new String(messageArr,StandardCharsets.UTF_8)));
-
-                counter += 8 + 1 + 4 +  serviceLength + 4 + messageLength;
-
-
+            if (!Files.exists(filePath)) {
+                return new HashMap<>();
             }
 
+            Map<Long, LogEntry> longLogEntryMap = new HashMap<>();
 
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+            try (DataInputStream dis = new DataInputStream(new BufferedInputStream(Files.newInputStream(filePath)))) {
+
+                long counter = 0;
+
+                while (true) {
+
+                    long timestamp;
+
+                    try {
+                        timestamp = dis.readLong();
+                    } catch (EOFException e) {
+                        break;
+                    }
+                    byte level = dis.readByte();
+
+                    int serviceLength = dis.readInt();
+
+                    byte[] serviceArr = new byte[serviceLength];
+
+                    dis.readFully(serviceArr);
+
+                    int messageLength = dis.readInt();
+
+                    byte[] messageArr = new byte[messageLength];
+                    dis.readFully(messageArr);
+
+                    longLogEntryMap.put(counter, new LogEntry(Instant.ofEpochMilli(timestamp), LogLevel.fromNumber(level), new String(serviceArr, StandardCharsets.UTF_8), new String(messageArr, StandardCharsets.UTF_8)));
+
+                    counter += 8 + 1 + 4 + serviceLength + 4 + messageLength;
+
+
+                }
+
+
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+
+            return longLogEntryMap;
+        } finally {
+            readAndWriteConfig.readWriteLock().readLock().unlock();
         }
 
-        return longLogEntryMap;
+
+
+
+
+
 
 
 
