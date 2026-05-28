@@ -1,6 +1,7 @@
 package com.methum.logstream.storage;
 
 import com.methum.logstream.config.ReadAndWriteConfig;
+import com.methum.logstream.encoding.WriteVLE;
 import com.methum.logstream.ingestion.LogEntry;
 
 import jakarta.annotation.PostConstruct;
@@ -28,12 +29,15 @@ public class LogWriter {
 
     private final ReadAndWriteConfig readAndWriteConfig;
 
+    private final WriteVLE writeVLE;
 
-    public LogWriter(@Value("${logstream.storage.path}") String filePath, InvertedIndex invertedIndex, ReadAndWriteConfig readAndWriteConfig){
+
+    public LogWriter(@Value("${logstream.storage.path}") String filePath, InvertedIndex invertedIndex, ReadAndWriteConfig readAndWriteConfig, WriteVLE writeVLE){
 
         this.filepath = Path.of(filePath);
         this.invertedIndex = invertedIndex;
         this.readAndWriteConfig = readAndWriteConfig;
+        this.writeVLE = writeVLE;
     }
 
 
@@ -56,9 +60,9 @@ public class LogWriter {
 
                 dos.writeLong(logEntry.timestamp().toEpochMilli());
                 dos.writeByte(logEntry.level().getNumber());
-                dos.writeInt(serviceBytes.length);
+                dos.write(writeVLE.write(serviceBytes.length));
                 dos.write(serviceBytes);
-                dos.writeInt(messageBytes.length);
+                dos.write(writeVLE.write(messageBytes.length));
                 dos.write(messageBytes);
 
 

@@ -1,6 +1,8 @@
 package com.methum.logstream.storage;
 
 import com.methum.logstream.config.ReadAndWriteConfig;
+import com.methum.logstream.encoding.ReadVLE;
+import com.methum.logstream.encoding.WriteVLE;
 import com.methum.logstream.ingestion.LogEntry;
 import com.methum.logstream.ingestion.LogLevel;
 import org.apache.juli.logging.Log;
@@ -24,9 +26,15 @@ public class LogReader {
 
     private final ReadAndWriteConfig readAndWriteConfig;
 
-    public LogReader(@Value("${logstream.storage.path}") String filePath, ReadAndWriteConfig readAndWriteConfig) {
+    private final ReadVLE readVLE;
+
+    private final WriteVLE writeVLE;
+
+    public LogReader(@Value("${logstream.storage.path}") String filePath, ReadAndWriteConfig readAndWriteConfig, ReadVLE readVLE, WriteVLE writeVLE) {
         this.filePath = Path.of(filePath);
         this.readAndWriteConfig = readAndWriteConfig;
+        this.readVLE = readVLE;
+        this.writeVLE = writeVLE;
     }
 
 
@@ -59,13 +67,13 @@ public class LogReader {
 
                     byte level =   dis.readByte();
 
-                    int serviceLength = dis.readInt();
+                    int serviceLength = readVLE.decode(dis);
 
                     byte [] serviceArr = new byte[serviceLength];
 
                     dis.readFully(serviceArr);
 
-                    int messageLength = dis.readInt();
+                    int messageLength = readVLE.decode(dis);
 
                     byte [] messageArr = new byte[messageLength];
 
@@ -110,13 +118,13 @@ public class LogReader {
             byte level = randomAccessFile.readByte();
 
             System.out.println(level);
-            int serviceLength =randomAccessFile.readInt();
+            int serviceLength = readVLE.decode(randomAccessFile);
             System.out.println(serviceLength);
             byte [] serviceArr = new byte[serviceLength];
 
             randomAccessFile.readFully(serviceArr);
 
-            int messageLength = randomAccessFile.readInt();
+            int messageLength = readVLE.decode(randomAccessFile);
 
             System.out.println(messageLength);
             byte [] messageArr = new byte[messageLength];
@@ -172,20 +180,25 @@ public class LogReader {
                     }
                     byte level = dis.readByte();
 
-                    int serviceLength = dis.readInt();
+                    int serviceLength = readVLE.decode(dis);
 
                     byte[] serviceArr = new byte[serviceLength];
 
+                    byte [] encodedServiceLength = writeVLE.write(serviceLength);
+
                     dis.readFully(serviceArr);
 
-                    int messageLength = dis.readInt();
+                    int messageLength = readVLE.decode(dis);
 
                     byte[] messageArr = new byte[messageLength];
+
+                    byte [] encodedMessageLength = writeVLE.write(messageLength);
+
                     dis.readFully(messageArr);
 
                     longLogEntryMap.put(counter, new LogEntry(Instant.ofEpochMilli(timestamp), LogLevel.fromNumber(level), new String(serviceArr, StandardCharsets.UTF_8), new String(messageArr, StandardCharsets.UTF_8)));
 
-                    counter += 8 + 1 + 4 + serviceLength + 4 + messageLength;
+                    counter += 8 + 1 + encodedServiceLength.length + serviceLength + encodedMessageLength.length + messageLength;
 
 
                 }
